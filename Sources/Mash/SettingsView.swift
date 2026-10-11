@@ -63,6 +63,20 @@ struct SettingsView: View {
                 }
                 .disabled(!settings.autoOffEnabled)
             }
+
+            Section {
+                Toggle(
+                    "Install updates automatically",
+                    isOn: UpdateController.canInstall ? $settings.autoUpdate : .constant(false)
+                )
+                .disabled(!UpdateController.canInstall)
+            } footer: {
+                Text(
+                    UpdateController.canInstall
+                        ? "Version \(UpdateController.versionText). Mash checks once a day and restarts to update, but never while it is on."
+                        : "Version \(UpdateController.versionText), built from source, which updates by rebuilding."
+                )
+            }
         }
         .formStyle(.grouped)
         .frame(width: 440)

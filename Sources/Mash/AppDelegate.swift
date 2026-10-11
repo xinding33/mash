@@ -10,6 +10,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let presser = AutoPresser()
     private let triggerMonitor = TriggerMonitor()
     private let hud = HUD()
+    private let updates = UpdateController()
 
     private var statusItem: NSStatusItem!
     private var settingsWindow: NSWindow?
@@ -40,10 +41,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // objectWillChange fires before the new value lands, so hop to the next main-queue turn.
         settings.objectWillChange
             .receive(on: DispatchQueue.main)
-            .sink { [weak self] in self?.apply() }
+            .sink { [weak self] in
+                self?.apply()
+                self?.updates.checkAutomatically()
+            }
             .store(in: &cancellables)
 
         apply()
+
+        updates.isBusy = { [weak self] in self?.isEnabled == true }
+        updates.willRestart = { [weak self] in self?.shutDown() }
+        updates.start()
     }
 
     // MARK: - State
@@ -101,6 +109,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         statusItem.button?.appearsDisabled = isEnabled && !targetIsFrontmost
     }
 
+    /// Releases the pressed key and the shortcut before Mash restarts into an update.
+    private func shutDown() {
+        enabledAt = nil
+        presser.stop()
+        triggerMonitor.update(trigger: settings.trigger, active: false)
+    }
+
     // MARK: - Accessibility
 
     private func requestAccessibility() -> Bool {
@@ -130,6 +145,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         menu.addItem(item("Settings…", action: #selector(openSettings), key: ","))
         menu.addItem(.separator())
+        let update = item(updates.status ?? "Check for Updates…", action: #selector(checkForUpdates))
+        update.isEnabled = updates.status == nil
+        menu.addItem(update)
         menu.addItem(NSMenuItem(title: "Quit Mash", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
     }
 
@@ -153,6 +171,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
         item.isEnabled = false
         return item
+    }
+
+    @objc private func checkForUpdates() {
+        updates.checkNow()
     }
 
     // MARK: - Settings window
