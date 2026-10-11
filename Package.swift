@@ -5,6 +5,8 @@ let package = Package(
     name: "Mash",
     platforms: [.macOS(.v13)],
     targets: [
-        .executableTarget(name: "Mash", path: "Sources/Mash")
+        .target(name: "MashCore"),
+        .executableTarget(name: "Mash", dependencies: ["MashCore"], path: "Sources/Mash"),
+        .testTarget(name: "MashCoreTests", dependencies: ["MashCore"]),
     ]
 )

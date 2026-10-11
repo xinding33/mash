@@ -15,6 +15,7 @@ final class Settings: ObservableObject {
         static let pressesPerSecond = "pressesPerSecond"
         static let autoOffEnabled = "autoOffEnabled"
         static let autoOffMinutes = "autoOffMinutes"
+        static let autoUpdate = "autoUpdate"
     }
 
     private let defaults = UserDefaults.standard
@@ -52,12 +53,17 @@ final class Settings: ObservableObject {
         }
     }
 
+    @Published var autoUpdate: Bool {
+        didSet { defaults.set(autoUpdate, forKey: Key.autoUpdate) }
+    }
+
     private init() {
         defaults.register(defaults: [
             Key.pressedKeyCode: kVK_ANSI_F,
             Key.pressesPerSecond: 8,
             Key.autoOffEnabled: true,
             Key.autoOffMinutes: 10,
+            Key.autoUpdate: true,
         ])
         target = defaults.data(forKey: Key.target)
             .flatMap { try? JSONDecoder().decode(TargetApp.self, from: $0) } ?? .geforceNow
@@ -67,6 +73,7 @@ final class Settings: ObservableObject {
         pressesPerSecond = Self.clamp(defaults.integer(forKey: Key.pressesPerSecond), to: Self.pressesPerSecondRange)
         autoOffEnabled = defaults.bool(forKey: Key.autoOffEnabled)
         autoOffMinutes = Self.clamp(defaults.integer(forKey: Key.autoOffMinutes), to: Self.autoOffMinutesRange)
+        autoUpdate = defaults.bool(forKey: Key.autoUpdate)
     }
 
     private static func clamp(_ value: Int, to range: ClosedRange<Int>) -> Int {
