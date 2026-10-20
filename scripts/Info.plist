@@ -2,25 +2,29 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>CFBundleExecutable</key>
+	<string>Mash</string>
 	<key>CFBundleIdentifier</key>
-	<string>com.xinding.mash</string>
+	<string>io.github.xinding33.mash</string>
 	<key>CFBundleName</key>
 	<string>Mash</string>
-	<key>CFBundleExecutable</key>
+	<key>CFBundleDisplayName</key>
 	<string>Mash</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.0</string>
+	<string>0.0.0</string>
 	<key>CFBundleVersion</key>
-	<string>1</string>
+	<string>0.0.0</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
 	<key>LSMinimumSystemVersion</key>
-	<string>13.0</string>
+	<string>14.0</string>
 	<key>LSUIElement</key>
 	<true/>
 	<key>NSHighResolutionCapable</key>
 	<true/>
-	<key>NSPrincipalClass</key>
-	<string>NSApplication</string>
+	<key>MashBuild</key>
+	<string>development</string>
 </dict>
 </plist>

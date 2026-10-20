@@ -1,10 +1,15 @@
 import AppKit
 import Carbon.HIToolbox
+import MashCore
 import SwiftUI
 import UniformTypeIdentifiers
 
 struct SettingsView: View {
     @ObservedObject var settings: Settings
+    @ObservedObject var updates: Updates
+    @State private var opensAtLogin = LoginItem.isEnabled
+    @State private var loginNeedsApproval = LoginItem.needsApproval
+    @State private var loginError: String?
 
     var body: some View {
         Form {
@@ -63,10 +68,58 @@ struct SettingsView: View {
                 }
                 .disabled(!settings.autoOffEnabled)
             }
+
+            Section {
+                Toggle("Open at Login", isOn: Binding(get: { opensAtLogin }, set: { enabled in
+                    do {
+                        try LoginItem.setEnabled(enabled)
+                        loginError = nil
+                    } catch {
+                        loginError = error.localizedDescription
+                    }
+                    refreshLoginItem()
+                }))
+                .disabled(LoginItem.problem != nil)
+                if let problem = LoginItem.problem {
+                    Text(problem).font(.caption).foregroundStyle(.secondary)
+                } else if loginNeedsApproval {
+                    LabeledContent("Switched off in System Settings") {
+                        Button("Open Login Items…") { NSWorkspace.shared.open(LoginItem.settingsURL) }
+                    }
+                }
+                if let loginError { Text(loginError).font(.caption).foregroundStyle(.red) }
+            }
+
+            Section {
+                Toggle("Install Updates Automatically", isOn: $updates.automatic)
+                    .disabled(!updates.canInstall)
+                LabeledContent("Version \(appVersion.description)") {
+                    if let status = updates.status {
+                        Text(status).foregroundStyle(.secondary)
+                    } else {
+                        Button("Check for Updates…") { updates.checkNow() }
+                    }
+                }
+            } header: {
+                Text("Updates")
+            } footer: {
+                Text(updates.canInstall
+                     ? "Mash checks GitHub once a day and installs new releases signed by its developer."
+                     : "This copy was built from source, so it can't install releases. Pull and build again to update.")
+            }
         }
         .formStyle(.grouped)
+        // Login Items can be switched on or off in System Settings while this window is open.
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in
+            refreshLoginItem()
+        }
         .frame(width: 440)
         .fixedSize()
+    }
+
+    private func refreshLoginItem() {
+        opensAtLogin = LoginItem.isEnabled
+        loginNeedsApproval = LoginItem.needsApproval
     }
 }
 

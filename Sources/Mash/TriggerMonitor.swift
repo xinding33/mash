@@ -2,10 +2,11 @@ import AppKit
 import Carbon.HIToolbox
 import os
 
-private let logger = Logger(subsystem: "com.xinding.mash", category: "trigger")
+private let logger = Logger(subsystem: bundleID, category: "trigger")
 
 /// Listens for the toggle trigger. Key triggers use a Carbon hot key; mouse triggers use an event tap,
 /// which needs Accessibility access. Both swallow the trigger so the game never sees it.
+@MainActor
 final class TriggerMonitor {
     var onTrigger: (() -> Void)?
 

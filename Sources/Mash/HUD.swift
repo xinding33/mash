@@ -1,6 +1,7 @@
 import AppKit
 
 /// A brief on-screen confirmation, since the menu bar is hidden while the game is fullscreen.
+@MainActor
 final class HUD {
     private let label = NSTextField(labelWithString: "")
     private lazy var panel = makePanel()
@@ -27,12 +28,14 @@ final class HUD {
     }
 
     private func fadeOut() {
-        NSAnimationContext.runAnimationGroup({ context in
+        NSAnimationContext.runAnimationGroup({ [panel] context in
             context.duration = 0.3
-            panel.animator().alphaValue = 0
+            MainActor.assumeIsolated { panel.animator().alphaValue = 0 }
         }, completionHandler: { [weak self] in
-            guard let self, self.panel.alphaValue == 0 else { return }
-            self.panel.orderOut(nil)
+            MainActor.assumeIsolated {
+                guard let self, self.panel.alphaValue == 0 else { return }
+                self.panel.orderOut(nil)
+            }
         })
     }
 

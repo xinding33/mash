@@ -2,14 +2,15 @@ import AppKit
 import Combine
 import SwiftUI
 import os
+import MashCore
 
-private let logger = Logger(subsystem: "com.xinding.mash", category: "app")
-
+@MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let settings = Settings.shared
     private let presser = AutoPresser()
     private let triggerMonitor = TriggerMonitor()
     private let hud = HUD()
+    private let updates = Updates()
 
     private var statusItem: NSStatusItem!
     private var settingsWindow: NSWindow?
@@ -26,6 +27,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // A second copy would fight the first over the trigger and the key presses.
+        let others = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID)
+            .filter { $0.processIdentifier != getpid() }
+        if !others.isEmpty {
+            others.first?.activate()
+            Relaunch.terminate()
+            return
+        }
+
+        installMainMenu()
+        LoginItem.refresh()
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         let menu = NSMenu()
         menu.delegate = self
@@ -44,6 +56,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             .store(in: &cancellables)
 
         apply()
+        updates.isBusy = { [weak self] in self?.isEnabled ?? false }
+        updates.start()
+        log.info("\(appName, privacy: .public) \(appVersion.description, privacy: .public) started")
+    }
+
+    /// Releases a key that's down, so quitting or relaunching mid-press doesn't leave it held in the game.
+    func applicationWillTerminate(_ notification: Notification) {
+        presser.stop()
+    }
+
+    /// Opening Mash again while it runs shows Settings, which is also where Open at Login and updates are.
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        openSettings()
+        return false
     }
 
     // MARK: - State
@@ -64,8 +90,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func setEnabled(_ enabled: Bool) {
         enabledAt = enabled ? Date() : nil
-        logger.info("Auto-pressing \(enabled ? "enabled" : "disabled", privacy: .public)")
+        log.info("Auto-pressing \(enabled ? "enabled" : "disabled", privacy: .public)")
         apply()
+        if !enabled { updates.becameIdle() }
     }
 
     @objc private func frontmostAppChanged() {
@@ -89,8 +116,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         autoOffTimer = nil
         if let autoOffDate {
             let timer = Timer(fire: autoOffDate, interval: 0, repeats: false) { [weak self] _ in
-                self?.setEnabled(false)
-                self?.hud.show("Mash Off (timer)")
+                MainActor.assumeIsolated {
+                    self?.setEnabled(false)
+                    self?.hud.show("Mash Off (timer)")
+                }
             }
             RunLoop.main.add(timer, forMode: .common)
             autoOffTimer = timer
@@ -104,7 +133,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     // MARK: - Accessibility
 
     private func requestAccessibility() -> Bool {
-        let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
+        // The value of kAXTrustedCheckOptionPrompt, which Swift 6 won't read because it's a global var.
+        let options = ["AXTrustedCheckOptionPrompt": true] as CFDictionary
         return AXIsProcessTrustedWithOptions(options)
     }
 
@@ -130,7 +160,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         menu.addItem(item("Settings…", action: #selector(openSettings), key: ","))
         menu.addItem(.separator())
-        menu.addItem(NSMenuItem(title: "Quit Mash", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
+        menu.addItem(item("Quit Mash", action: #selector(quit), key: "q"))
     }
 
     private var statusText: String {
@@ -146,8 +176,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func item(_ title: String, action: Selector, key: String = "") -> NSMenuItem {
         let item = NSMenuItem(title: title, action: action, keyEquivalent: key)
         item.target = self
+        // macOS 27 adds symbols to items like Quit. The setting is in the macOS 27 SDK (Swift 6.4),
+        // and CI's Xcode may be older than this Mac's.
+        #if compiler(>=6.4)
+        if #available(macOS 27, *) { item.preferredImageVisibility = .hidden }
+        #endif
         return item
     }
+
+    @objc private func quit() { Relaunch.terminate() }
 
     private func disabledItem(_ title: String) -> NSMenuItem {
         let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
@@ -159,14 +196,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc private func openSettings() {
         if settingsWindow == nil {
-            let window = NSWindow(contentViewController: NSHostingController(rootView: SettingsView(settings: settings)))
+            let window = NSWindow(contentViewController: NSHostingController(rootView: SettingsView(settings: settings, updates: updates)))
             window.title = "Mash Settings"
             window.styleMask = [.titled, .closable]
             window.isReleasedWhenClosed = false
             window.center()
             settingsWindow = window
         }
-        NSApp.activate(ignoringOtherApps: true)
+        NSApp.activate()
         settingsWindow?.makeKeyAndOrderFront(nil)
+    }
+
+    /// Menu bar apps have no visible main menu, but the Settings window still needs one for ⌘C, ⌘V and ⌘W.
+    private func installMainMenu() {
+        let editMenu = NSMenu(title: "Edit")
+        editMenu.addItem(withTitle: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
+        editMenu.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+        editMenu.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
+        editMenu.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+        editMenu.addItem(withTitle: "Close Window", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
+        let editItem = NSMenuItem()
+        editItem.submenu = editMenu
+        let mainMenu = NSMenu()
+        mainMenu.addItem(editItem)
+        NSApp.mainMenu = mainMenu
     }
 }
