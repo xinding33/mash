@@ -2,6 +2,7 @@ import Carbon.HIToolbox
 import Combine
 import Foundation
 
+@MainActor
 final class Settings: ObservableObject {
     static let shared = Settings()
 

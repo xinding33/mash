@@ -1,12 +1,15 @@
 import AppKit
 
 /// Repeatedly presses a key, but only while the target app is frontmost.
+@MainActor
 final class AutoPresser {
     private let eventSource = CGEventSource(stateID: .hidSystemState)
     private var timer: DispatchSourceTimer?
     private var keyCode: CGKeyCode = 0
     private var pressesPerSecond = 0
     private var target: TargetApp?
+    /// The key-up for a press still being held, and the work that posts it.
+    private var pendingUp: (event: CGEvent, work: DispatchWorkItem)?
 
     func start(keyCode: CGKeyCode, pressesPerSecond: Int, in target: TargetApp) {
         let unchanged = keyCode == self.keyCode && pressesPerSecond == self.pressesPerSecond && target == self.target
@@ -27,6 +30,15 @@ final class AutoPresser {
     func stop() {
         timer?.cancel()
         timer = nil
+        releaseKey()
+    }
+
+    /// Posts the pending key-up now rather than when it's due.
+    private func releaseKey() {
+        guard let pendingUp else { return }
+        pendingUp.work.cancel()
+        pendingUp.event.post(tap: .cghidEventTap)
+        self.pendingUp = nil
     }
 
     private func press(holdFor holdDuration: TimeInterval) {
@@ -39,9 +51,10 @@ final class AutoPresser {
         // Clear flags so modifiers physically held for the toggle shortcut don't turn this into a combo.
         down.flags = []
         up.flags = []
+        releaseKey()
         down.post(tap: .cghidEventTap)
-        DispatchQueue.main.asyncAfter(deadline: .now() + holdDuration) {
-            up.post(tap: .cghidEventTap)
-        }
+        let work = DispatchWorkItem { [weak self] in MainActor.assumeIsolated { self?.releaseKey() } }
+        pendingUp = (up, work)
+        DispatchQueue.main.asyncAfter(deadline: .now() + holdDuration, execute: work)
     }
 }
